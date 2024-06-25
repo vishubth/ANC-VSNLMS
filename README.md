@@ -22,7 +22,7 @@ This repository contains the implementation of an AdaptiveFilter-based Active No
 To ensure consistent setup across any platform, we use a Conda environment. Follow these steps:
 
 1. Clone the repository:
-   git clone https://github.com/your-username/adaptivefilter-anc.git
+   git clone https://github.com/vishubth/ANC-VSNLMS
    cd adaptivefilter-anc
 
 2. Create the Conda environment from the environment.yml file:
