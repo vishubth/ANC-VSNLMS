@@ -1,0 +1,11 @@
+name: anc
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - pip
+  - pip:
+      - matplotlib  # Optionally, for plotting waveforms or filters if needed
+      - soundfile  # for reading and writing audio files
+      - numpy
+      - scipy
