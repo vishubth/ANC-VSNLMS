@@ -26,8 +26,10 @@ def mix_audio_files(voice_file_path, noise_file_path, output_dir):
     """
     Mixes a voice file with a background noise file and saves the outputs in a specified directory.
     """
-    voice = normalize(AudioSegment.from_file(voice_file_path))
-    noise = normalize(AudioSegment.from_file(noise_file_path))
+    if voice_file_path:
+        voice = normalize(AudioSegment.from_file(voice_file_path))
+    if noise_file_path:
+        noise = normalize(AudioSegment.from_file(noise_file_path))
 
     # Calculate dynamic noise level
     noise_level = calculate_noise_level(voice, noise)
@@ -75,10 +77,14 @@ def main_menu():
     if not voice_files or not noise_files:
         print("Could not find enough WAV files in one or both directories.")
         return
-
+    counter = 1
     for voice_file_path, noise_file_path in zip(voice_files, noise_files):
-        output_dir = os.path.join(output_root_dir, f"output_{os.path.basename(voice_file_path).split('.')[0]}_{os.path.basename(noise_file_path).split('.')[0]}")
-        mix_audio_files(voice_file_path, noise_file_path, output_dir)
+        try:
+            output_dir = os.path.join(output_root_dir, f"output_sample_{counter}")
+            mix_audio_files(voice_file_path, noise_file_path, output_dir)
+            counter += 1
+        except:
+            continue
 
 if __name__ == "__main__":
     main_menu()
