@@ -80,8 +80,8 @@ class AdaptiveFilter:
         print(f"Root Mean Square Error (RMSE): {average_error:.4f}")
 
     def apply_filter(self, input_signal):
-        if weights_path and os.path.exists(weights_path):
-            self.load_weights(weights_path)
+        if self.weights_path and os.path.exists(self.weights_path):
+            self.load_weights(self.weights_path)
         N = len(input_signal)
         output = np.zeros(N)
         for n in range(self.filter_order, N):
