@@ -204,22 +204,33 @@ def validate_filter(filter_instance, noisy_file_path, clean_file_path):
     print(f"Filtered SNR: {filtered_snr:.2f} dB")
     print(f"SNR Improvement: {snr_improvement:.2f} dB")
 
+def find_wav_files(directory, filename='mixed_output.wav'):
+    wav_files = []
+    
+    for root, dirs, files in os.walk(directory):
+        if filename in files:
+            wav_files.append(os.path.join(root, filename))
+    
+    return wav_files
+
 
 if __name__ == "__main__":
     filter_order = 32 # 64 og
-    # vsnlms_params = (0.005, 0.5, 0.0001, 20, 20, 1.05)  # Reduced mu and less aggressive alpha
-    vsnlms_params = (0.002, 0.5, 0.0001, 20, 20, 1.02)
+    vsnlms_params = (0.01, 0.5, 0.0001, 10, 10, 1.1)  # Reduced mu and less aggressive alpha
+    # vsnlms_params = (0.002, 0.5, 0.0001, 20, 20, 1.02)
     weights_path = 'adaptive_filter_weights.npy'
     adaptive_filter = AdaptiveFilter(filter_order, vsnlms_params, weights_path)
 
     # Training phase
-    root_directory = r'C:\Users\divya\Desktop\ANC_Project\data\artificial_data\Final2'
+    root_directory = r'C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_training_data'
     process_directory(root_directory, adaptive_filter)
 
     # Testing phase on new input
-    new_input_path = r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\Final2\output_sample_44\mixed_output.wav"
-    test_new_input(adaptive_filter, new_input_path)
-    validate_filter(adaptive_filter, new_input_path, new_input_path.replace('mixed_output', 'voice_output'))
+    paths = find_wav_files(r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_test_data")
+    for new_input_path in paths:
+    # new_input_path = r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\Final2\output_sample_44\mixed_output.wav"
+        test_new_input(adaptive_filter, new_input_path)
+        validate_filter(adaptive_filter, new_input_path, new_input_path.replace('mixed_output', 'voice_output'))
 
     # Optionally, plot the performance after all trainings
     adaptive_filter.plot_performance()

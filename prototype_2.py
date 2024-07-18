@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 import random
 import optuna
 
-# VSNLMS and AdaptiveFilter classes
-# Include these classes from your previous script
-
 class VSNLMS:
     def __init__(self, mu, mu_max, mu_min, m0, m1, alpha, delta=0.0):
         self.mu = mu
@@ -202,37 +199,81 @@ def validate_filter(filter_instance, noisy_file_path, clean_file_path):
     print(f"Filtered SNR: {filtered_snr:.2f} dB")
     print(f"SNR Improvement: {snr_improvement:.2f} dB")
 
-def objective(trial):
-    # Define the search space for each parameter
-    mu = trial.suggest_loguniform('mu', 1e-4, 1e-2)
-    mu_max = trial.suggest_loguniform('mu_max', 1e-2, 1.0)
-    mu_min = trial.suggest_loguniform('mu_min', 1e-5, 1e-2)
-    m0 = trial.suggest_int('m0', 10, 30)
-    m1 = trial.suggest_int('m1', 10, 30)
-    alpha = trial.suggest_uniform('alpha', 1.01, 1.2)
-
-    vsnlms_params = (mu, mu_max, mu_min, m0, m1, alpha)
-    adaptive_filter = AdaptiveFilter(filter_order, vsnlms_params, weights_path)
-
-    # Training phase
-    process_directory(root_directory, adaptive_filter)
-
-    # Validation phase on a new input
-    new_input_path = r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\Final2\output_sample_44\mixed_output.wav"
-    validate_filter(adaptive_filter, new_input_path, new_input_path.replace('mixed_output', 'voice_output'))
+def find_wav_files(directory, filename='mixed_output.wav'):
+    wav_files = []
     
-    # Return the validation RMSE as the objective value
-    return adaptive_filter.rmse_history[-1]
+    for root, dirs, files in os.walk(directory):
+        if filename in files:
+            wav_files.append(os.path.join(root, filename))
+    
+    return wav_files
 
 if __name__ == "__main__":
-    filter_order = 32  # 64 og
+    filter_order = 32  # Initial filter order
     weights_path = 'adaptive_filter_weights.npy'
-    root_directory = r'C:\Users\divya\Desktop\ANC_Project\data\artificial_data\Final2'
+    root_directory = r'C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_training_data'
+
+    # Function to optimize parameters using Optuna
+    def objective(trial):
+        # Define the search space for each parameter
+        mu = trial.suggest_loguniform('mu', 1e-4, 1e-2)
+        mu_max = trial.suggest_loguniform('mu_max', 1e-2, 1.0)
+        mu_min = trial.suggest_loguniform('mu_min', 1e-5, 1e-2)
+        m0 = trial.suggest_int('m0', 10, 30)
+        m1 = trial.suggest_int('m1', 10, 30)
+        alpha = trial.suggest_uniform('alpha', 1.01, 1.2)
+
+        vsnlms_params = (mu, mu_max, mu_min, m0, m1, alpha)
+        adaptive_filter = AdaptiveFilter(filter_order, vsnlms_params, weights_path)
+
+        # Training phase
+        process_directory(root_directory, adaptive_filter)
+
+        # Validation phase on a new input
+        new_input_path = r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_test_data\output_sample_4\mixed_output.wav"
+        validate_filter(adaptive_filter, new_input_path, new_input_path.replace('mixed_output', 'voice_output'))
+
+        # Calculate validation RMSE
+        validation_rmse = adaptive_filter.rmse_history[-1]
+
+        # Log parameter set and corresponding RMSE
+        trial.report(validation_rmse, step=0)
+
+        # Early stopping if the current trial is not promising
+        if trial.should_prune():
+            raise optuna.TrialPruned()
+
+        print(f"Trial {trial.number} finished with RMSE: {validation_rmse} and parameters: {trial.params}")
+
+        return validation_rmse
 
     # Optimize the parameters using Optuna
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=100)  # Adjust the number of trials as needed
+    study.optimize(objective, n_trials=200)  # Adjust the number of trials as needed
 
     print(f"Best parameters: {study.best_params}")
     print(f"Best RMSE: {study.best_value}")
 
+    # Use the best parameters for final training and testing
+    best_params = study.best_params
+    vsnlms_params = (
+        best_params['mu'],
+        best_params['mu_max'],
+        best_params['mu_min'],
+        best_params['m0'],
+        best_params['m1'],
+        best_params['alpha']
+    )
+    adaptive_filter = AdaptiveFilter(filter_order, vsnlms_params, weights_path)
+
+    # Final training phase with best parameters
+    process_directory(root_directory, adaptive_filter)
+
+    # Testing phase on new inputs
+    paths = find_wav_files(r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_test_data")
+    for new_input_path in paths:
+        test_new_input(adaptive_filter, new_input_path)
+        validate_filter(adaptive_filter, new_input_path, new_input_path.replace('mixed_output', 'voice_output'))
+
+    # Optionally, plot the performance after all trainings
+    adaptive_filter.plot_performance()

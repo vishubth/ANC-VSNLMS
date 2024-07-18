@@ -68,7 +68,7 @@ def main_menu():
     voice_dir = easygui.diropenbox(title="Select the directory containing voice WAV files")
     noise_dir = easygui.diropenbox(title="Select the directory containing noise WAV files")
     output_root_dir = easygui.diropenbox(title="Select the root output directory")
-    number_of_mixes = easygui.integerbox("Enter the number of mixed files you want to create:", lowerbound=1, upperbound=100, default=1)
+    number_of_mixes = easygui.integerbox("Enter the number of mixed files you want to create:", lowerbound=1, upperbound=1000, default=1)
 
     # Randomly pick specified number of voice and noise files
     voice_files = find_random_files(voice_dir, count=number_of_mixes)
