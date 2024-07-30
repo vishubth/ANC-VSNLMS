@@ -1,139 +1,118 @@
 import numpy as np
-import sounddevice as sd
 import soundfile as sf
-from anc_model import ANCModel
-import noisereduce as nr
-import os
-from scipy.signal import butter, lfilter
+import tensorflow as tf
+import matplotlib.pyplot as plt
+from postprocessing import normalize_output, apply_bandpass_filter, reduce_noise
 
-class RealTimeANC:
+def load_audio_file(file_path):
     """
-    Real-time active noise cancellation class.
+    Load an audio file.
     
-    Attributes:
-        model (ANCModel): The adaptive noise cancellation model.
-        sample_rate (int): The sample rate for audio processing.
+    Args:
+        file_path (str): Path to the audio file.
+    
+    Returns:
+        tuple: Loaded audio data and sampling rate.
+    """
+    data, samplerate = sf.read(file_path)
+    return data, samplerate
+
+def save_audio_file(file_path, data, samplerate):
+    """
+    Save audio data to a file.
+    
+    Args:
+        file_path (str): Path to save the audio file.
+        data (np.array): Audio data to save.
+        samplerate (int): Sampling rate of the audio data.
+    """
+    sf.write(file_path, data, samplerate)
+
+def test_tflite_model(tflite_model_path, noisy_data, filter_order):
+    """
+    Test the TFLite model on noisy data.
+    
+    Args:
+        tflite_model_path (str): Path to the TFLite model file.
+        noisy_data (np.array): Noisy input audio data.
         filter_order (int): The order of the adaptive filter.
-    """
     
-    def __init__(self, model, sample_rate=44100, filter_order=32):
-        """
-        Initialize the RealTimeANC with the given model, sample rate, and filter order.
-        
-        Args:
-            model (ANCModel): The adaptive noise cancellation model.
-            sample_rate (int): The sample rate for audio processing.
-            filter_order (int): The order of the adaptive filter.
-        """
-        self.sample_rate = sample_rate
-        self.filter_order = filter_order
-        self.model = model
+    Returns:
+        np.array: Processed output audio data.
+    """
+    # Load the TFLite model
+    interpreter = tf.lite.Interpreter(model_path=tflite_model_path)
+    interpreter.allocate_tensors()
 
-    def record_audio(self, duration, filename='recorded_audio.wav'):
-        """
-        Record audio for a specified duration and save to a file.
-        
-        Args:
-            duration (int): The duration to record audio in seconds.
-            filename (str): The path to the file where the recorded audio will be saved.
-        """
-        print(f"Recording for {duration} seconds...")
-        recording = sd.rec(int(duration * self.sample_rate), samplerate=self.sample_rate, channels=1)
-        sd.wait()  # Wait until the recording is finished
-        sf.write(filename, recording, self.sample_rate)
-        print(f"Recording saved to {filename}")
+    # Get input and output tensors
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
 
-    def butter_bandpass(self, lowcut, highcut, fs, order=5):
-        nyquist = 0.5 * fs
-        low = lowcut / nyquist
-        high = highcut / nyquist
-        b, a = butter(order, [low, high], btype='band')
-        return b, a
+    # Prepare output array
+    num_samples = len(noisy_data)
+    output_data = np.zeros(num_samples)
 
-    def bandpass_filter(self, data, lowcut, highcut, fs, order=5):
-        b, a = self.butter_bandpass(lowcut, highcut, fs, order=order)
-        y = lfilter(b, a, data)
-        return y
+    # Process the input data
+    for i in range(filter_order, num_samples):
+        input_segment = noisy_data[i-filter_order:i].astype(np.float32).reshape(1, filter_order, 1)
+        interpreter.set_tensor(input_details[0]['index'], input_segment)
+        interpreter.invoke()
+        output_data[i] = interpreter.get_tensor(output_details[0]['index'])
 
-    def butter_lowpass(self, cutoff, fs, order=5):
-        nyquist = 0.5 * fs
-        normal_cutoff = cutoff / nyquist
-        b, a = butter(order, normal_cutoff, btype='low', analog=False)
-        return b, a
+    return output_data
 
-    def lowpass_filter(self, data, cutoff, fs, order=5):
-        b, a = self.butter_lowpass(cutoff, fs, order=order)
-        y = lfilter(b, a, data)
-        return y
+def plot_signals(noisy, predicted, clean, plot_file):
+    """
+    Plot the noisy, predicted clean, and original clean signals.
+    
+    Args:
+        noisy (np.array): Noisy input signal.
+        predicted (np.array): Predicted clean signal from the model.
+        clean (np.array): Original clean signal.
+        plot_file (str): Path to save the plot image.
+    """
+    plt.figure(figsize=(15, 8))
+    plt.plot(noisy, label='Noisy Signal', alpha=0.6, color='red')
+    plt.plot(predicted, label='Predicted Clean Signal', alpha=0.8, color='blue')
+    plt.plot(clean, label='Original Clean Signal', alpha=0.8, color='green')
+    plt.title('Signal Comparison')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(plot_file)
+    plt.show()
 
-    def process_audio(self, input_filename, output_filename, chunk_size=1024):
-        """
-        Process the recorded audio with the ANC model and save the processed output.
-        
-        Args:
-            input_filename (str): The path to the input audio file.
-            output_filename (str): The path to the output audio file.
-            chunk_size (int): The size of the chunks to process the audio in.
-        """
-        audio, _ = sf.read(input_filename)
-        processed_audio = np.zeros_like(audio)
+def main():
+    # Paths to the noisy input file, clean reference file, output file, and plot file
+    noisy_file = r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_test_data\output_sample_15\mixed_output.wav"
+    clean_file = r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_test_data\output_sample_15\voice_output.wav"
+    output_audio_file = r"C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_test_data\output_sample_15\filtered_output.wav"
+    tflite_model_path = 'anc_model.tflite'
+    filter_order = 32
+    lowcut = 20.0
+    highcut = 7999.0
+    fs = 16000  # Sample rate
+    plot_output_file = 'signal_plot.png'
 
-        # Process the audio in larger chunks
-        for start_idx in range(0, len(audio) - self.filter_order, chunk_size):
-            end_idx = min(start_idx + chunk_size, len(audio))
-            chunk = np.array([audio[i-self.filter_order:i][::-1] for i in range(start_idx + self.filter_order, end_idx)])
-            
-            # Debug: Print the shape and sample values of the chunk
-            print(f"Processing chunk from {start_idx} to {end_idx}, chunk shape: {chunk.shape}")
-            print(f"Sample input values: {chunk[0]}")
+    # Load the noisy and clean audio files
+    noisy_data, sr = load_audio_file(noisy_file)
+    clean_data, _ = load_audio_file(clean_file)
 
-            predictions = self.model.predict(chunk)
-            
-            # Debug: Print the shape and sample values of the predictions
-            print(f"Predictions shape: {predictions.shape}")
-            print(f"Sample predictions: {predictions[:5]}")
+    # Test the TFLite model on the noisy data
+    processed_data = test_tflite_model(tflite_model_path, noisy_data, filter_order)
 
-            processed_audio[start_idx + self.filter_order:end_idx] = predictions.flatten()
+    # Post-processing
+    processed_data = apply_bandpass_filter(processed_data, lowcut, highcut, fs)
+    processed_data = reduce_noise(processed_data)
+    processed_data = normalize_output(processed_data)
 
-        # Debug: Check min and max values of processed_audio
-        print(f"Processed audio min value: {np.min(processed_audio)}, max value: {np.max(processed_audio)}")
+    # Save the processed output to a file
+    save_audio_file(output_audio_file, processed_data, sr)
 
-        # Apply bandpass filter to enhance voice and reduce noise
-        lowcut = 200.0  # Widened range for more natural sound
-        highcut = 4000.0
-        processed_audio = self.bandpass_filter(processed_audio, lowcut, highcut, self.sample_rate)
+    # Plot the signals
+    plot_signals(noisy_data, processed_data, clean_data, plot_output_file)
 
-        # Apply noise reduction using spectral gating with less aggressive parameters
-        noise_profile = processed_audio[:1000]  # Assume first 1000 samples are noise
-        reduced_noise_audio = nr.reduce_noise(y=processed_audio, sr=self.sample_rate, y_noise=noise_profile, prop_decrease=0.8, freq_mask_smooth_hz=200)
-
-        # Apply a low-pass filter to reduce high-frequency static noise
-        cutoff = 5000.0
-        reduced_noise_audio = self.lowpass_filter(reduced_noise_audio, cutoff, self.sample_rate)
-
-        # Normalize the processed audio
-        max_val = np.max(np.abs(reduced_noise_audio))
-        if max_val > 0:
-            reduced_noise_audio = reduced_noise_audio / max_val
-
-        sf.write(output_filename, reduced_noise_audio, self.sample_rate)
-        print(f"Processed audio saved to {output_filename}")
+    print(f"Processed output saved to {output_audio_file}")
+    print(f"Plot saved to {plot_output_file}")
 
 if __name__ == "__main__":
-    sample_rate = 44100
-    filter_order = 32
-
-    anc_model = ANCModel(input_shape=(filter_order,))
-    real_time_anc = RealTimeANC(model=anc_model, sample_rate=sample_rate, filter_order=filter_order)
-
-    # Load pre-trained weights
-    weights_path = 'anc_weights.h5'
-    anc_model.load_weights(weights_path)
-
-    duration = 10  # Duration of recording in seconds
-    recorded_filename = 'recorded_audio.wav'
-    output_filename = 'filtered_output.wav'
-
-    # Record and process audio
-    real_time_anc.record_audio(duration, recorded_filename)
-    real_time_anc.process_audio(recorded_filename, output_filename)
+    main()

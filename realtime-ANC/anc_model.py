@@ -1,28 +1,13 @@
-import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Sequential # type: ignore
-from tensorflow.keras.layers import Dense, InputLayer # type: ignore
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout, BatchNormalization, Input
 
 class ANCModel:
-    """
-    Neural network-based adaptive noise cancellation model.
-    
-    Attributes:
-        model (tf.keras.Model): The neural network model.
-        optimizer (tf.keras.optimizers.Optimizer): The optimizer for training the model.
-    """
-    
     def __init__(self, input_shape, learning_rate=0.001):
-        """
-        Initialize the ANCModel with the given input shape and learning rate.
-        
-        Args:
-            input_shape (tuple): The shape of the input to the model.
-            learning_rate (float): The learning rate for the optimizer.
-        """
+        self.input_shape = input_shape
+        self.learning_rate = learning_rate
         self.model = self.build_model(input_shape)
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        self.model.compile(optimizer=self.optimizer, loss='mse')
+        self.compile_model()
 
     def build_model(self, input_shape):
         """
@@ -35,62 +20,82 @@ class ANCModel:
             tf.keras.Model: The constructed neural network model.
         """
         model = Sequential()
-        model.add(InputLayer(input_shape=input_shape))
-        model.add(Dense(128, activation='relu'))
-        model.add(Dense(64, activation='relu'))
+        model.add(Input(shape=input_shape))
+        model.add(Conv1D(64, kernel_size=5, activation='relu', padding='same'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(pool_size=2))
+        model.add(Dropout(0.3))
+
+        model.add(Conv1D(128, kernel_size=5, activation='relu', padding='same'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(pool_size=2))
+        model.add(Dropout(0.3))
+
+        model.add(Flatten())
+        model.add(Dense(256, activation='relu'))
+        model.add(Dropout(0.5))
         model.add(Dense(1, activation='linear'))
+
         return model
 
-    def train(self, x, y, epochs=10, batch_size=32):
+    def compile_model(self):
         """
-        Train the model on the given data.
-        
-        Args:
-            x (np.array): The input data.
-            y (np.array): The target data.
-            epochs (int): The number of epochs to train.
-            batch_size (int): The size of training batches.
+        Compile the neural network model with the specified loss and optimizer.
         """
-        self.model.fit(x, y, epochs=epochs, batch_size=batch_size, verbose=1, validation_split=0.2)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+        self.model.compile(optimizer=optimizer, loss='mse')
 
-    def save_weights(self, filename):
+    def train(self, x_train, y_train, epochs, batch_size, validation_data=None):
         """
-        Save the model weights to a file.
+        Train the model with the given training data.
         
         Args:
-            filename (str): The path to the file where weights will be saved.
+            x_train (np.array): Training input data.
+            y_train (np.array): Training target data.
+            epochs (int): Number of epochs to train.
+            batch_size (int): Size of each training batch.
+            validation_data (tuple): Validation data for monitoring the model's performance.
         """
-        self.model.save_weights(filename)
+        self.model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, validation_data=validation_data)
 
-    def load_weights(self, filename):
+    def save_weights(self, file_path):
         """
-        Load the model weights from a file.
+        Save the model's weights to the specified file path.
         
         Args:
-            filename (str): The path to the file from which weights will be loaded.
+            file_path (str): Path to the file where the weights will be saved.
         """
-        self.model.load_weights(filename)
+        self.model.save_weights(file_path)
 
-    def save_tflite(self, filename):
+    def load_weights(self, file_path):
         """
-        Save the model in TensorFlow Lite format.
+        Load the model's weights from the specified file path.
         
         Args:
-            filename (str): The path to the file where the TFLite model will be saved.
+            file_path (str): Path to the file where the weights are stored.
+        """
+        self.model.load_weights(file_path)
+
+    def save_tflite(self, file_path):
+        """
+        Convert the model to TFLite format and save it to the specified file path.
+        
+        Args:
+            file_path (str): Path to the file where the TFLite model will be saved.
         """
         converter = tf.lite.TFLiteConverter.from_keras_model(self.model)
         tflite_model = converter.convert()
-        with open(filename, 'wb') as f:
+        with open(file_path, 'wb') as f:
             f.write(tflite_model)
 
     def predict(self, x):
         """
-        Predict the output for the given input data.
+        Make predictions using the model.
         
         Args:
-            x (np.array): The input data.
-            
+            x (np.array): Input data for making predictions.
+        
         Returns:
-            np.array: The predicted output.
+            np.array: Model predictions.
         """
         return self.model.predict(x)

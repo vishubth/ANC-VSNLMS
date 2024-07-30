@@ -1,118 +1,99 @@
+import os
 import numpy as np
 import soundfile as sf
 from anc_model import ANCModel
-import os
+from preprocessing import preprocess_audio_data, create_training_data
 
-def find_min_length(directory):
+def pad_or_trim(audio, target_length):
     """
-    Find the minimum length of audio files in the directory structure.
+    Pad or trim audio data to a target length.
     
     Args:
-        directory (str): Path to the root directory containing subdirectories with noisy and clean audio files.
-        
+        audio (np.array): Input audio data.
+        target_length (int): Target length for the audio data.
+    
     Returns:
-        int: The minimum length of the audio files.
+        np.array: Audio data with the specified target length.
     """
-    min_length = float('inf')
+    if len(audio) > target_length:
+        return audio[:target_length]
+    else:
+        return np.pad(audio, (0, target_length - len(audio)), 'constant')
 
-    for subdir, _, files in os.walk(directory):
-        for file in files:
-            if 'mixed_output.wav' in file or 'voice_output.wav' in file:
-                file_path = os.path.join(subdir, file)
-                data, _ = sf.read(file_path)
-                if len(data) < min_length:
-                    min_length = len(data)
-
-    return min_length
-
-def load_and_preprocess_audio(subdir, target_length):
+def load_audio_files(noisy_files, clean_files, target_length=None):
     """
-    Load and preprocess audio files from a subdirectory.
+    Load audio files for training and ensure consistent length.
     
     Args:
-        subdir (str): Path to the subdirectory containing noisy and clean audio files.
-        target_length (int): The target length for all audio files.
-        
+        noisy_files (list): List of paths to noisy audio files.
+        clean_files (list): List of paths to clean audio files.
+        target_length (int): Target length for padding/truncating audio files.
+    
     Returns:
-        tuple: Lists of noisy and clean audio data.
+        tuple: Arrays of noisy and clean audio data with consistent length.
     """
-    noisy_file = None
-    clean_file = None
-    for file in os.listdir(subdir):
-        if 'mixed_output.wav' in file:
-            noisy_file = os.path.join(subdir, file)
-        elif 'voice_output.wav' in file:
-            clean_file = os.path.join(subdir, file)
+    noisy_data = []
+    clean_data = []
 
-    if noisy_file and clean_file:
+    for noisy_file, clean_file in zip(noisy_files, clean_files):
         noisy, _ = sf.read(noisy_file)
         clean, _ = sf.read(clean_file)
 
-        # Truncate or pad the noisy and clean files to match the target length
-        if len(noisy) > target_length:
-            noisy = noisy[:target_length]
-        else:
-            noisy = np.pad(noisy, (0, target_length - len(noisy)), 'constant')
+        if target_length:
+            # Ensure the audio files have consistent length
+            noisy = pad_or_trim(noisy, target_length)
+            clean = pad_or_trim(clean, target_length)
 
-        if len(clean) > target_length:
-            clean = clean[:target_length]
-        else:
-            clean = np.pad(clean, (0, target_length - len(clean)), 'constant')
+        noisy_data.append(noisy)
+        clean_data.append(clean)
 
-        return noisy, clean
+    return np.array(noisy_data), np.array(clean_data)
 
-    return None, None
-
-def create_training_data(noisy, clean, filter_order):
-    """
-    Create training data for the ANC model.
-    
-    Args:
-        noisy (np.array): Array of noisy audio data.
-        clean (np.array): Array of clean audio data.
-        filter_order (int): The order of the adaptive filter.
-        
-    Returns:
-        tuple: Training input and target data.
-    """
-    x_train = []
-    y_train = []
-
-    for i in range(filter_order, len(noisy)):
-        x_train.append(noisy[i-filter_order:i])
-        y_train.append(clean[i])
-
-    return np.array(x_train), np.array(y_train)
-
-if __name__ == "__main__":
+def main():
     filter_order = 32
     learning_rate = 0.001
-    epochs = 1
+    epochs = 10
     batch_size = 32
     weights_path = 'anc_weights.h5'
     tflite_filename = 'anc_model.tflite'
+    target_length = 16000  # Set to desired target length
 
-    # Path to your root directory containing subdirectories with noisy and clean audio files
+    # Paths to your noisy and clean audio files
     root_directory = r'C:\Users\divya\Desktop\ANC_Project\data\artificial_data\new_training_data'
+    noisy_files = []
+    clean_files = []
 
-    # Find the minimum length of the audio files
-    target_length = find_min_length(root_directory)
-
-    # Initialize the ANC model
-    anc_model = ANCModel(input_shape=(filter_order,), learning_rate=learning_rate)
-
-    # Train on each subdirectory incrementally
     for subdir, _, files in os.walk(root_directory):
-        if any('mixed_output.wav' in file for file in files) and any('voice_output.wav' in file for file in files):
-            noisy, clean = load_and_preprocess_audio(subdir, target_length)
-            if noisy is not None and clean is not None:
-                x_train, y_train = create_training_data(noisy, clean, filter_order)
-                anc_model.train(x_train, y_train, epochs=epochs, batch_size=batch_size)
-                print(f"Trained on data from {subdir}")
+        for file in files:
+            if 'mixed_output' in file:
+                noisy_files.append(os.path.join(subdir, file))
+            elif 'voice_output' in file:
+                clean_files.append(os.path.join(subdir, file))
+
+    # Ensure noisy_files and clean_files are sorted to match pairs
+    noisy_files = sorted(noisy_files)
+    clean_files = sorted(clean_files)
+
+    # Load audio files
+    noisy_data, clean_data = load_audio_files(noisy_files, clean_files, target_length)
+
+    # Preprocess audio data
+    preprocessed_noisy_data, preprocessed_clean_data = preprocess_audio_data(noisy_data, clean_data, target_length)
+
+    # Create training data
+    x_train, y_train = create_training_data(preprocessed_noisy_data, preprocessed_clean_data, filter_order)
+
+    # Initialize and train the ANC model
+    anc_model = ANCModel(input_shape=(filter_order, 1), learning_rate=learning_rate)
+    anc_model.train(x_train, y_train, epochs=epochs, batch_size=batch_size)
 
     # Save the trained model weights
     anc_model.save_weights(weights_path)
+
     # Save the model as TFLite
     anc_model.save_tflite(tflite_filename)
 
     print(f"Training completed. Weights saved to {weights_path} and model saved to {tflite_filename}.")
+
+if __name__ == "__main__":
+    main()
