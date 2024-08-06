@@ -1,3 +1,8 @@
+# --------------------------------------------------------------------------------------------------------------
+# 
+# Author - Vishal Shrivastava
+# 
+# ---------------------------------------------------------------------------------------------------------------
 import numpy as np
 import soundfile as sf
 import tensorflow as tf
@@ -28,14 +33,15 @@ def save_audio_file(file_path, data, samplerate):
     """
     sf.write(file_path, data, samplerate)
 
-def test_tflite_model(tflite_model_path, noisy_data, filter_order):
+def test_tflite_model(tflite_model_path, noisy_data, filter_order, overlap=0.5):
     """
-    Test the TFLite model on noisy data.
+    Test the TFLite model on noisy data with overlapping segments.
     
     Args:
         tflite_model_path (str): Path to the TFLite model file.
         noisy_data (np.array): Noisy input audio data.
         filter_order (int): The order of the adaptive filter.
+        overlap (float): The fraction of overlap between segments (0 to 1).
     
     Returns:
         np.array: Processed output audio data.
@@ -52,14 +58,27 @@ def test_tflite_model(tflite_model_path, noisy_data, filter_order):
     num_samples = len(noisy_data)
     output_data = np.zeros(num_samples)
 
+    # Calculate the step size based on overlap
+    step_size = int(filter_order * (1 - overlap))
+    
     # Process the input data
-    for i in range(filter_order, num_samples):
-        input_segment = noisy_data[i-filter_order:i].astype(np.float32).reshape(1, filter_order, 1)
+    for start in range(0, num_samples - filter_order, step_size):
+        end = start + filter_order
+        input_segment = noisy_data[start:end].astype(np.float32).reshape(1, filter_order, 1)
         interpreter.set_tensor(input_details[0]['index'], input_segment)
         interpreter.invoke()
-        output_data[i] = interpreter.get_tensor(output_details[0]['index'])
+        segment_output = interpreter.get_tensor(output_details[0]['index'])
+
+        # Place the output in the correct location, ensuring overlap is handled
+        output_data[start:end] += segment_output.ravel()
+    
+    # Handle normalization if summation causes volume increase in overlapping regions
+    max_output = np.max(np.abs(output_data))
+    if max_output > 0:
+        output_data /= max_output
 
     return output_data
+
 
 def plot_signals(noisy, predicted, clean, plot_file):
     """
@@ -102,7 +121,7 @@ def main():
 
     # Post-processing
     processed_data = apply_bandpass_filter(processed_data, lowcut, highcut, fs)
-    processed_data = reduce_noise(processed_data)
+    # processed_data = reduce_noise(processed_data)
     processed_data = normalize_output(processed_data)
 
     # Save the processed output to a file

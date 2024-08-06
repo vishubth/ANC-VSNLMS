@@ -1,3 +1,8 @@
+# --------------------------------------------------------------------------------------------------------------
+# 
+# Author - Vishal Shrivastava
+# 
+# ---------------------------------------------------------------------------------------------------------------
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout, BatchNormalization, Input
