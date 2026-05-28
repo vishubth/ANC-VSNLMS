@@ -1,0 +1,19 @@
+experiment:
+  name: baseline_vsnlms
+
+filter:
+  order: 64
+
+vsnlms:
+  mu: 0.0001
+  mu_max: 0.1
+  mu_min: 0.000001
+  m0: 10
+  m1: 10
+  alpha: 1.01
+
+runtime:
+  sample_rate: 44100
+
+training:
+  enable_weight_persistence: true
