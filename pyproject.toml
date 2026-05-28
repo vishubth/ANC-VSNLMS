@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anc-vsnlms"
+version = "0.1.0"
+description = "Adaptive Active Noise Cancellation using VSNLMS adaptive filtering"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Vishal Shrivastava" }
+]
+
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "sounddevice",
+  "soundfile",
+  "librosa",
+  "optuna"
+]
+
+[tool.black]
+line-length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
