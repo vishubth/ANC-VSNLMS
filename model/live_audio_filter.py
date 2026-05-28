@@ -1,100 +1,271 @@
+import logging
+import os
+
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
+from numpy.typing import NDArray
+
 from adaptive_filter import AdaptiveFilter
-import os
+
+
+logger = logging.getLogger(__name__)
+
 
 class LiveAudioFilter:
-    def __init__(self, filter_order, vsnlms_params, weights_path=None, sample_rate=44100):
+    """
+    Real-time audio runtime pipeline for adaptive
+    Active Noise Cancellation (ANC).
+
+    Responsibilities:
+
+    - microphone audio acquisition
+    - runtime signal preprocessing
+    - adaptive filter execution
+    - filtered audio generation
+    - streaming-oriented DSP experimentation
+
+    This module simulates deployment-style ANC runtime behavior.
+    """
+
+    def __init__(
+        self,
+        filter_order: int,
+        vsnlms_params: tuple,
+        weights_path: str | None = None,
+        sample_rate: int = 44100,
+    ) -> None:
         self.sample_rate = sample_rate
         self.filter_order = filter_order
-        self.adaptive_filter = AdaptiveFilter(filter_order, vsnlms_params, weights_path)
-        self.output_data = []
 
-    def record_audio(self, duration, temp_filename='temp_recording.wav'):
+        self.adaptive_filter = AdaptiveFilter(
+            filter_order,
+            vsnlms_params,
+            weights_path,
+        )
+
+        self.output_data: list = []
+
+    def record_audio(
+        self,
+        duration: int,
+        temp_filename: str = "temp_recording.wav",
+    ) -> None:
         """
-        Record audio from the microphone and save it to a temporary file.
+        Capture microphone audio and persist temporary runtime input.
 
         Args:
-            duration (int): Duration of the recording in seconds.
-            temp_filename (str): Path to the temporary file to save the recording.
+            duration: Recording duration in seconds.
+            temp_filename: Temporary recording path.
         """
+
         try:
-            print(f"Recording for {duration} seconds...")
-            recording = sd.rec(int(duration * self.sample_rate), samplerate=self.sample_rate, channels=1, dtype='float32')
-            sd.wait()
-            sf.write(temp_filename, recording, self.sample_rate)
-            print(f"Recording saved to {temp_filename}")
-        except Exception as e:
-            print(f"An error occurred during recording: {e}")
+            logger.info(
+                "Starting live audio capture for %s seconds.",
+                duration,
+            )
 
-    def process_audio(self, input_filename, output_filename):
+            recording = sd.rec(
+                int(duration * self.sample_rate),
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype="float32",
+            )
+
+            sd.wait()
+
+            sf.write(
+                temp_filename,
+                recording,
+                self.sample_rate,
+            )
+
+            logger.info(
+                "Audio recording persisted to %s",
+                temp_filename,
+            )
+
+        except Exception as runtime_error:
+            logger.error(
+                "Live audio capture failed: %s",
+                runtime_error,
+            )
+            raise
+
+    def process_audio(
+        self,
+        input_filename: str,
+        output_filename: str,
+    ) -> None:
         """
-        Process the recorded audio using the adaptive filter and save the output.
+        Execute runtime adaptive filtering pipeline.
 
         Args:
-            input_filename (str): Path to the input file (recorded audio).
-            output_filename (str): Path to the output file (filtered audio).
+            input_filename: Input audio path.
+            output_filename: Output filtered audio path.
         """
+
         try:
             noisy_signal, _ = sf.read(input_filename)
-            noisy_signal = noisy_signal.flatten()  # Flatten in case it's not a 1D array
 
-            # Preprocess the noisy signal (optional)
-            max_val = np.max(np.abs(noisy_signal))
-            if max_val > 0:
-                noisy_signal = noisy_signal / max_val
+            noisy_signal = noisy_signal.flatten()
 
-            print(f"Max value of noisy signal: {max_val}")
-            print(f"First 10 samples of noisy signal: {noisy_signal[:10]}")
+            normalized_signal = self._normalize_signal(
+                noisy_signal,
+            )
 
-            # Ensure the input length matches the filter order
-            if len(noisy_signal) < self.filter_order:
-                print(f"Input signal length ({len(noisy_signal)}) is less than filter order ({self.filter_order}). Padding the signal.")
-                padded_noisy_signal = np.pad(noisy_signal, (self.filter_order, 0), 'constant', constant_values=(0, 0))
-            else:
-                padded_noisy_signal = noisy_signal
+            padded_signal = self._prepare_signal(
+                normalized_signal,
+            )
 
-            filtered_output = np.zeros_like(padded_noisy_signal)
-            for n in range(self.filter_order, len(padded_noisy_signal)):
-                x = padded_noisy_signal[n-self.filter_order:n][::-1]
-                if x.shape[0] != self.adaptive_filter.vsnlms.weights.shape[0]:
-                    print(f"Shape mismatch: segment shape {x.shape}, weights shape {self.adaptive_filter.vsnlms.weights.shape}")
-                filtered_output[n] = np.dot(self.adaptive_filter.vsnlms.weights, x)
+            filtered_output = self._execute_filtering_pipeline(
+                padded_signal,
+            )
 
-            filtered_output = filtered_output[:len(noisy_signal)]  # Remove any extra padding if it was added
+            filtered_output = filtered_output[
+                : len(normalized_signal)
+            ]
 
-            print(f"First 10 samples of filtered output: {filtered_output[:10]}")
-            
-            sf.write(output_filename, filtered_output, self.sample_rate)
-            print(f"Filtered audio saved to {output_filename}")
-        except Exception as e:
-            print(f"An error occurred during processing: {e}")
+            sf.write(
+                output_filename,
+                filtered_output,
+                self.sample_rate,
+            )
 
-    def start(self, duration=10, temp_filename='temp_recording.wav', output_filename='filtered_output.wav'):
+            logger.info(
+                "Filtered runtime audio saved to %s",
+                output_filename,
+            )
+
+        except Exception as runtime_error:
+            logger.error(
+                "Runtime audio processing failed: %s",
+                runtime_error,
+            )
+            raise
+
+    def start(
+        self,
+        duration: int = 10,
+        temp_filename: str = "temp_recording.wav",
+        output_filename: str = "filtered_output.wav",
+    ) -> None:
         """
-        Record, process, and save the filtered audio.
-
-        Args:
-            duration (int): Duration of the recording in seconds.
-            temp_filename (str): Path to the temporary file to save the recording.
-            output_filename (str): Path to the output file to save the filtered audio.
+        Execute end-to-end live ANC runtime workflow.
         """
+
         self.record_audio(duration, temp_filename)
-        self.process_audio(temp_filename, output_filename)
 
-        # Optionally, delete the temporary file after processing
+        self.process_audio(
+            temp_filename,
+            output_filename,
+        )
+
+        self._cleanup_temp_file(temp_filename)
+
+    def _normalize_signal(
+        self,
+        signal: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """
+        Normalize runtime signal amplitude.
+        """
+
+        max_amplitude = np.max(np.abs(signal))
+
+        if max_amplitude > 0:
+            signal = signal / max_amplitude
+
+        logger.info(
+            "Signal normalization completed. Max amplitude: %.6f",
+            max_amplitude,
+        )
+
+        return signal
+
+    def _prepare_signal(
+        self,
+        signal: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """
+        Prepare runtime signal for adaptive filtering.
+        """
+
+        if len(signal) < self.filter_order:
+            logger.warning(
+                "Signal shorter than filter order. Applying zero-padding."
+            )
+
+            return np.pad(
+                signal,
+                (self.filter_order, 0),
+                "constant",
+                constant_values=(0, 0),
+            )
+
+        return signal
+
+    def _execute_filtering_pipeline(
+        self,
+        padded_signal: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """
+        Execute incremental adaptive filtering pipeline.
+        """
+
+        filtered_output = np.zeros_like(padded_signal)
+
+        for index in range(
+            self.filter_order,
+            len(padded_signal),
+        ):
+            signal_window = padded_signal[
+                index - self.filter_order:index
+            ][::-1]
+
+            filtered_output[index] = np.dot(
+                self.adaptive_filter.vsnlms.weights,
+                signal_window,
+            )
+
+        return filtered_output
+
+    def _cleanup_temp_file(self, temp_filename: str) -> None:
+        """
+        Remove temporary runtime artifacts.
+        """
+
         if os.path.exists(temp_filename):
             os.remove(temp_filename)
-            print(f"Temporary file {temp_filename} deleted.")
+
+            logger.info(
+                "Temporary runtime artifact removed: %s",
+                temp_filename,
+            )
+
 
 if __name__ == "__main__":
-    filter_order = 64  # Experiment with different filter orders
-    vsnlms_params = (0.0001, 0.1, 0.000001, 10, 10, 1.01)  # Adjusted parameters
-    weights_path = 'adaptive_filter_weights.npy'
-    live_audio_filter = LiveAudioFilter(filter_order, vsnlms_params, weights_path)
+    FILTER_ORDER = 64
 
-    duration = 10  # Duration of recording in seconds
-    temp_filename = 'temp_recording.wav'
-    output_filename = 'filtered_output.wav'
-    live_audio_filter.start(duration, temp_filename, output_filename)
+    VSNLMS_PARAMS = (
+        0.0001,
+        0.1,
+        0.000001,
+        10,
+        10,
+        1.01,
+    )
+
+    WEIGHTS_PATH = "adaptive_filter_weights.npy"
+
+    runtime_filter = LiveAudioFilter(
+        FILTER_ORDER,
+        VSNLMS_PARAMS,
+        WEIGHTS_PATH,
+    )
+
+    runtime_filter.start(
+        duration=10,
+        temp_filename="temp_recording.wav",
+        output_filename="filtered_output.wav",
+    )
