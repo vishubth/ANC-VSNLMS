@@ -1,0 +1,21 @@
+experiment:
+  name: benchmark_vsnlms
+
+filter:
+  order: 128
+
+vsnlms:
+  mu: 0.00005
+  mu_max: 0.05
+  mu_min: 0.0000001
+  m0: 15
+  m1: 15
+  alpha: 1.02
+
+runtime:
+  sample_rate: 44100
+
+benchmark:
+  calculate_snr: true
+  calculate_rmse: true
+  generate_visualizations: true
