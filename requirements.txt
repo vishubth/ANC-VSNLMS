@@ -1,0 +1,12 @@
+numpy
+scipy
+matplotlib
+sounddevice
+soundfile
+librosa
+pydub
+noisereduce
+optuna
+pytest
+flake8
+black
